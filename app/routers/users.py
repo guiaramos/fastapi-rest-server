@@ -1,5 +1,6 @@
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, status, Depends
 from passlib.context import CryptContext
+from pymongo import errors
 
 from ..models import users as user_models
 from ..repositories.mongo import users as user_repo
@@ -9,6 +10,10 @@ router = APIRouter()
 
 # pwd_context create a crypto context for hash
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+
+def get_user_collection():
+    return user_repo.user_coll
 
 
 # check_confirm_password checks if the password has been confirmed by the user
@@ -23,8 +28,8 @@ def get_password_hash(password: str):
     return pwd_context.hash(password)
 
 
-@router.post("/users/", tags=["users"], response_model=user_models.User)
-async def create_user(user: user_models.UserIn):
+@router.post("/users", tags=["users"], response_model=user_models.User)
+async def create_user(user: user_models.UserIn, coll=Depends(get_user_collection)):
     # check if the confirm password matches with the password
     if not check_confirm_password(user.password, user.password_confirm):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="passwords not match")
@@ -43,7 +48,12 @@ async def create_user(user: user_models.UserIn):
 
     )
 
-    # creates the user on db
-    created_user = user_repo.create_one(user_db)
+    # TODO: should return cookies when user is successfully saved on DB
 
-    return user_models.User(**created_user.dict())
+    try:
+        # creates the user on db
+        created_user = user_repo.create_one(coll, user_db)
+        return user_models.User(**created_user.dict())
+
+    except errors.DuplicateKeyError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=[e.details])

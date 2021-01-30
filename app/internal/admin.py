@@ -1,1 +1,0 @@
- # "admin" submodule, e.g. import app.internal.admin
