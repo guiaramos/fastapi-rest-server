@@ -1,46 +1,49 @@
-from typing import Optional
-
 from fastapi import APIRouter, HTTPException, status
-from firebase_admin import auth
-from pydantic import BaseModel, EmailStr
+from passlib.context import CryptContext
+
+from ..models import users as user_models
+from ..repositories.mongo import users as user_repo
 
 # create users router
 router = APIRouter()
 
-
-# UserIn describes the schema of User input
-class UserIn(BaseModel):
-    email: EmailStr
-    password: str
-    password_confirm: str
+# pwd_context create a crypto context for hash
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
-# UserInDB describes the schema of User in DB
-class UserInDB(BaseModel):
-    uid: str
-    provider_id: str
-    email: str
-    display_name: Optional[str]
-    photo_url: Optional[str]
-    phone_number: Optional[str]
+# check_confirm_password checks if the password has been confirmed by the user
+def check_confirm_password(pass1: str, pass2: str):
+    if pass1 != pass2:
+        return False
+    return True
 
 
-# save_user_to_db saves user on firebase
-def save_user_to_firebase(user: UserIn):
-    try:
-        fire_user = auth.create_user(email=user.email, password=user.password)
-    except auth.EmailAlreadyExistsError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=[{"msg": str(e)}])
-
-    return UserInDB(uid=fire_user.uid, provider_id=fire_user.provider_id, email=fire_user.email,
-                    display_name=fire_user.display_name, photo_url=fire_user.photo_url,
-                    phone_number=fire_user.phone_number)
+# get_password_hash return the hashed assword
+def get_password_hash(password: str):
+    return pwd_context.hash(password)
 
 
-@router.post("/users/", tags=["users"], response_model=UserInDB)
-async def create_user(user: UserIn):
+@router.post("/users/", tags=["users"], response_model=user_models.User)
+async def create_user(user: user_models.UserIn):
     # check if the confirm password matches with the password
-    if user.password != user.password_confirm:
+    if not check_confirm_password(user.password, user.password_confirm):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="passwords not match")
 
-    return save_user_to_firebase(user)
+    # gets the hashed password
+    hashed_password = get_password_hash(user.password)
+
+    # creates a user for insert on db
+    user_db = user_models.UserInDB(
+        email=user.email,
+        hashed_password=hashed_password,
+        name=user.name,
+        display_name=user.display_name,
+        photo_url=user.photo_url,
+        phone_number=user.phone_number
+
+    )
+
+    # creates the user on db
+    created_user = user_repo.create_one(user_db)
+
+    return user_models.User(**created_user.dict())

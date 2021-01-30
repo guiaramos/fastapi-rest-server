@@ -1,11 +1,6 @@
 from fastapi import FastAPI
-import firebase_admin
-from firebase_admin import credentials
 from .routers import users
 
-# initiate firebase
-cred = credentials.Certificate("./serviceAccountKey.json")
-firebase_admin.initialize_app(cred)
 
 # starts server
 app = FastAPI()
