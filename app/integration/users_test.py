@@ -1,25 +1,18 @@
-from fastapi.testclient import TestClient
 from fastapi import status
+from fastapi.testclient import TestClient
 from mongomock import MongoClient
 
 from app.main import app
-from ..models import users as user_models
+from ..env import COOKIE_ACCESS_KEY
+from ..mocks.mock_users import get_mock_user
+from ..models.users import User
 from ..repositories.mongo import users as user_repo
-from ..routers.users import COOKIE_ACCESS_KEY
 
 client = TestClient(app)
 
 mock_coll = MongoClient().db.collection
 
-new_user_db = user_models.UserIn(
-    email="test@aaaa.com",
-    password='banana',
-    password_confirm='banana',
-    name="test",
-    display_name="test test",
-    photo_url="http test",
-    phone_number="01028969112"
-)
+new_user_db = get_mock_user()
 
 
 # get_mocked_user_collection is a mock for collection
@@ -37,9 +30,8 @@ def test_create_user():
     assert response.status_code == status.HTTP_200_OK
 
     stored_user = mock_coll.find_one({'email': new_user_db.email})
-    stored_user['id'] = str(stored_user['_id'])
-    new_user = user_models.User(**stored_user)
-    print(response.cookies)
+    new_user = User.from_mongo(stored_user).dict()
+    new_user['id'] = str(new_user['id'])
     assert response.json() == new_user
 
     assert response.cookies[COOKIE_ACCESS_KEY]

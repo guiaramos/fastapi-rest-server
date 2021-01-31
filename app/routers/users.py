@@ -4,9 +4,11 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException, status, Depends, Response
 from jose import jwt
 from passlib.context import CryptContext
-from pymongo import errors
 
-from ..models import users as user_models, token as token_models
+from ..dependencies import get_token_cookie
+from ..env import COOKIE_ACCESS_KEY, SECRET_KEY, ALGORITHM, ACCESS_TOKEN_EXPIRE_MINUTES
+from ..models.token import TokenData
+from ..models.users import UserIn, UserInDB, User
 from ..repositories.mongo import users as user_repo
 
 # create users router
@@ -14,15 +16,10 @@ router = APIRouter(
     prefix="/users",
     tags=["users"],
     # dependencies=[Depends(get_token_header)],
-    responses={status.HTTP_400_BAD_REQUEST: {"detail": "passwords not match"}},
+    responses={status.HTTP_400_BAD_REQUEST: {"detail": "passwords not match"},
+               status.HTTP_401_UNAUTHORIZED: {"detail": "could not validate credentials"},
+               status.HTTP_404_NOT_FOUND: {"detail": "user not found"}},
 )
-
-# to get a string like this run:
-# openssl rand -hex 32
-SECRET_KEY = "0a19e92911da2a0d3a5088d3cafc978cf3089ab966c1c5c2b37ac70981c19ee6"
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
-COOKIE_ACCESS_KEY = "todo.access-token"
 
 # pwd_context create a crypto context for hash
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -65,38 +62,56 @@ def create_access_cookie(response: Response, value: str, max_age: int):
     return
 
 
-@router.post("/", response_model=user_models.User)
-async def create_user(user: user_models.UserIn, response: Response, coll=Depends(user_repo.get_user_collection)):
+# create_user_on_db creates a user on database
+def create_user_on_db(user_in: UserIn, hashed_password: str, coll=Depends(user_repo.get_user_collection)) -> User:
+    # creates a user for insert on db
+    user_db = UserInDB(
+        email=user_in.email,
+        hashed_password=hashed_password,
+        name=user_in.name,
+        display_name=user_in.display_name,
+        photo_url=user_in.photo_url,
+        phone_number=user_in.phone_number
+    )
+
+    stored_user = user_repo.create_one(coll, user_db)
+
+    return stored_user
+
+
+# get_user_on_db gets te user on database
+def get_user_on_db(_id: str, coll=user_repo.get_user_collection) -> User:
+    store_user = user_repo.find_one(coll, _id)
+    if store_user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="user not found")
+    return User(**store_user.dict())
+
+
+# get_current_user returns the current user
+async def get_current_user(token_data: TokenData = Depends(get_token_cookie)) -> User:
+    _id = token_data.id
+    current_user = get_user_on_db(_id)
+    return current_user
+
+
+@router.post("/", response_model=User)
+async def create_user(user_in: UserIn, response: Response, coll=Depends(user_repo.get_user_collection)):
     # check if the confirm password matches with the password
-    if not check_confirm_password(user.password, user.password_confirm):
+    if not check_confirm_password(user_in.password, user_in.password_confirm):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="passwords not match")
 
     # gets the hashed password
-    hashed_password = get_password_hash(user.password)
+    hashed_password = get_password_hash(user_in.password)
 
-    # creates a user for insert on db
-    user_db = user_models.UserInDB(
-        email=user.email,
-        hashed_password=hashed_password,
-        name=user.name,
-        display_name=user.display_name,
-        photo_url=user.photo_url,
-        phone_number=user.phone_number
-    )
+    # creates the user on db
+    created_user = create_user_on_db(user_in, hashed_password, coll)
 
-    try:
-        # creates the user on db
-        created_user = user_repo.create_one(coll, user_db)
+    # creates access_token
+    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token_data = TokenData(id=str(created_user.id))
+    access_token = create_access_token(access_token_data.dict(), access_token_expires)
 
-        # creates access_token
-        access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-        access_token_data = token_models.TokenData(id=created_user.id)
-        access_token = create_access_token(access_token_data.dict(), access_token_expires)
+    # add cookie to header
+    create_access_cookie(response, access_token, access_token_expires.seconds)
 
-        # add cookie to header
-        create_access_cookie(response, access_token, access_token_expires.seconds)
-
-        return user_models.User(**created_user.dict())
-
-    except errors.DuplicateKeyError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=[e.details])
+    return created_user
