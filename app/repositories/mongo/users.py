@@ -2,8 +2,9 @@ from .connection import db
 from ...models import users as user_models
 
 
-# user_coll is a collection for the users
-user_coll = db.users
+# get_user_collection returns the User collection
+def get_user_collection():
+    return db.users
 
 
 #  create_one creates one User on DB

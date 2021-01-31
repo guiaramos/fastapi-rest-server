@@ -1,9 +1,11 @@
 from fastapi.testclient import TestClient
+from fastapi import status
 from mongomock import MongoClient
 
 from app.main import app
 from ..models import users as user_models
-from ..routers import users
+from ..repositories.mongo import users as user_repo
+from ..routers.users import COOKIE_ACCESS_KEY
 
 client = TestClient(app)
 
@@ -25,15 +27,19 @@ def get_mocked_user_collection():
     return mock_coll
 
 
-app.dependency_overrides[users.get_user_collection] = get_mocked_user_collection
+# overrides the deps so it uses a mock collection instead of calling the actually database
+app.dependency_overrides[user_repo.get_user_collection] = get_mocked_user_collection
 
 
 def test_create_user():
     # test if user is created with no errors
-    response = client.post("/users", json=new_user_db.dict())
-    assert response.status_code == 200
+    response = client.post("/users/", json=new_user_db.dict())
+    assert response.status_code == status.HTTP_200_OK
 
     stored_user = mock_coll.find_one({'email': new_user_db.email})
     stored_user['id'] = str(stored_user['_id'])
     new_user = user_models.User(**stored_user)
+    print(response.cookies)
     assert response.json() == new_user
+
+    assert response.cookies[COOKIE_ACCESS_KEY]
