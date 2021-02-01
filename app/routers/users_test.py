@@ -1,3 +1,4 @@
+import unittest
 from datetime import timedelta
 
 import pytest
@@ -5,7 +6,8 @@ from fastapi import HTTPException, status
 from jose import jwt
 from mongomock import MongoClient
 
-from .users import check_confirm_password, get_password_hash, create_access_token, get_user_on_db, create_user_on_db
+from .users import check_confirm_password, get_password_hash, create_access_token, get_user_on_db, create_user_on_db, \
+    get_current_user
 from ..env import SECRET_KEY, ALGORITHM, ACCESS_TOKEN_EXPIRE_MINUTES
 from ..mocks.mock_users import get_mock_user
 from ..models.token import TokenData
@@ -46,6 +48,18 @@ def test_create_access_token():
     assert fakeid == fakeid_decoded.get('id')
 
 
+def test_create_user_on_db():
+    # test should create on user on db
+    mock_user = get_mock_user()
+    hashed_password = get_password_hash(mock_user.password)
+    created_user = create_user_on_db(coll=mock_coll, hashed_password=hashed_password, user_in=mock_user)
+    delattr(mock_user, 'password')
+    delattr(mock_user, 'password_confirm')
+    delattr(created_user, 'hashed_password')
+    delattr(created_user, 'id')
+    assert mock_user.dict() == created_user.dict()
+
+
 def test_get_user_on_db():
     # test should return user from db
     mock_user = get_mock_user()
@@ -72,5 +86,13 @@ def test_get_user_on_db_wrong_id():
         get_user_on_db(mocked_id, mock_coll)
     assert e.value.status_code == status.HTTP_400_BAD_REQUEST
 
-# TODO: get_current_user
-# TODO: create_user_on_db
+
+class TestAsyncUser(unittest.TestCase):
+    async def test_get_current_user(self):
+        # test should return the current user by the token data
+        mock_user = get_mock_user()
+        hashed_password = get_password_hash(mock_user.password)
+        created_user = create_user_on_db(coll=mock_coll, hashed_password=hashed_password, user_in=mock_user)
+        access_token_data = TokenData(id=str(created_user.id))
+        stored_user = await get_current_user(access_token_data)
+        assert stored_user == created_user

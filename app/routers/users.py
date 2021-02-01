@@ -5,7 +5,6 @@ from fastapi import APIRouter, HTTPException, status, Depends, Response
 from jose import jwt
 from passlib.context import CryptContext
 
-from ..dependencies import get_token_cookie
 from ..env import COOKIE_ACCESS_KEY, SECRET_KEY, ALGORITHM, ACCESS_TOKEN_EXPIRE_MINUTES
 from ..models.token import TokenData
 from ..models.users import UserIn, UserInDB, User
@@ -88,9 +87,9 @@ def get_user_on_db(_id: str, coll=user_repo.get_user_collection) -> User:
 
 
 # get_current_user returns the current user
-async def get_current_user(token_data: TokenData = Depends(get_token_cookie)) -> User:
+async def get_current_user(token_data: TokenData) -> User:
     _id = token_data.id
-    current_user = get_user_on_db(_id)
+    current_user = get_user_on_db(_id, coll=user_repo.get_user_collections)
     return current_user
 
 
