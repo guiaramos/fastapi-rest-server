@@ -1,4 +1,3 @@
-import unittest
 from datetime import timedelta
 
 import pytest
@@ -87,12 +86,13 @@ def test_get_user_on_db_wrong_id():
     assert e.value.status_code == status.HTTP_400_BAD_REQUEST
 
 
-class TestAsyncUser(unittest.TestCase):
-    async def test_get_current_user(self):
-        # test should return the current user by the token data
-        mock_user = get_mock_user()
-        hashed_password = get_password_hash(mock_user.password)
-        created_user = create_user_on_db(coll=mock_coll, hashed_password=hashed_password, user_in=mock_user)
-        access_token_data = TokenData(id=str(created_user.id))
-        stored_user = await get_current_user(access_token_data)
-        assert stored_user == created_user
+@pytest.mark.asyncio
+async def test_get_current_user():
+    # test should return the current user by the token data
+    mock_user = get_mock_user()
+    hashed_password = get_password_hash(mock_user.password)
+    created_user = create_user_on_db(coll=mock_coll, hashed_password=hashed_password, user_in=mock_user)
+    delattr(created_user, 'hashed_password')
+    access_token_data = TokenData(id=str(created_user.id))
+    stored_user = await get_current_user(access_token_data, mock_coll)
+    assert stored_user.dict() == created_user.dict()

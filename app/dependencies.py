@@ -1,6 +1,4 @@
-from typing import Optional
-
-from fastapi import Cookie, HTTPException, status
+from fastapi import HTTPException, status, Request
 from jose import jwt, JWTError
 
 from .env import COOKIE_ACCESS_KEY, SECRET_KEY, ALGORITHM
@@ -8,12 +6,11 @@ from .models import token as token_models
 
 credentials_exception = HTTPException(
     status_code=status.HTTP_401_UNAUTHORIZED,
-    detail="could not validate credentials",
+    detail="user not authenticated",
 )
 
 
-# get_token_cookie should return the token received on headers cookies
-async def get_token_cookie(token: Optional[str] = Cookie(COOKIE_ACCESS_KEY)):
+def get_token_data(token: str):
     # check if the token is found
     if not token:
         raise credentials_exception
@@ -28,7 +25,20 @@ async def get_token_cookie(token: Optional[str] = Cookie(COOKIE_ACCESS_KEY)):
 
         token_data = token_models.TokenData(id=_id)
 
+        return token_data
+
     except JWTError:
         raise credentials_exception
+
+
+# get_token_cookie should return the token received on headers cookies
+async def get_token_cookie(request: Request):
+    cookies = request.cookies
+    # check if the cookie is sent
+    if not cookies:
+        raise credentials_exception
+
+    token = cookies[COOKIE_ACCESS_KEY]
+    token_data = get_token_data(token)
 
     return token_data

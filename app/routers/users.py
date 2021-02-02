@@ -5,6 +5,7 @@ from fastapi import APIRouter, HTTPException, status, Depends, Response
 from jose import jwt
 from passlib.context import CryptContext
 
+from ..dependencies import get_token_cookie
 from ..env import COOKIE_ACCESS_KEY, SECRET_KEY, ALGORITHM, ACCESS_TOKEN_EXPIRE_MINUTES
 from ..models.token import TokenData
 from ..models.users import UserIn, UserInDB, User
@@ -79,7 +80,7 @@ def create_user_on_db(user_in: UserIn, hashed_password: str, coll=Depends(user_r
 
 
 # get_user_on_db gets te user on database
-def get_user_on_db(_id: str, coll=user_repo.get_user_collection) -> User:
+def get_user_on_db(_id: str, coll: user_repo.get_user_collection) -> User:
     store_user = user_repo.find_one(coll, _id)
     if store_user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="user not found")
@@ -87,9 +88,9 @@ def get_user_on_db(_id: str, coll=user_repo.get_user_collection) -> User:
 
 
 # get_current_user returns the current user
-async def get_current_user(token_data: TokenData) -> User:
+async def get_current_user(token_data: TokenData, coll: user_repo.get_user_collection) -> User:
     _id = token_data.id
-    current_user = get_user_on_db(_id, coll=user_repo.get_user_collections)
+    current_user = get_user_on_db(_id, coll=coll)
     return current_user
 
 
@@ -114,3 +115,8 @@ async def create_user(user_in: UserIn, response: Response, coll=Depends(user_rep
     create_access_cookie(response, access_token, access_token_expires.seconds)
 
     return created_user
+
+
+@router.get("/me/", response_model=User)
+async def get_me(coll=Depends(user_repo.get_user_collection), token_data: TokenData = Depends(get_token_cookie)):
+    return await get_current_user(token_data, coll)
