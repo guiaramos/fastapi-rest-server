@@ -67,6 +67,12 @@ class UserIn(BaseModel):
     phone_number: Optional[str]
 
 
+# UserSignIn describes the schema of User input
+class UserSignIn(BaseModel):
+    email: EmailStr
+    password: str
+
+
 # User describes the schema of User output
 class User(MongoModel):
     id: Optional[OID] = Field()

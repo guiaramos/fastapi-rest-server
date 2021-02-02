@@ -3,7 +3,7 @@ from fastapi import HTTPException, status
 from mongomock import MongoClient
 
 from .connection import create_indexes
-from .users import create_one, delete_one, find_one, get_user_collection, check_valid_id
+from .users import create_one, delete_one, find_one, get_user_collection, check_valid_id, find_one_by_email
 from ...models.users import UserInDB
 
 collection = MongoClient().db.collection
@@ -89,3 +89,17 @@ def test_check_valid_id():
     with pytest.raises(HTTPException) as e:
         check_valid_id(_id)
     assert e.value.status_code == status.HTTP_400_BAD_REQUEST
+
+
+def test_find_one_by_email():
+    # test should return the User
+    create_one(collection, new_user)
+    stored_user = find_one_by_email(collection, new_user.email)
+    delattr(stored_user, 'id')
+    assert stored_user == new_user
+
+
+def test_find_one_by_email_wrong_email():
+    # test should return None if the user is not registered
+    stored_user = find_one_by_email(collection, 'pizza@burguer.com')
+    assert stored_user is None

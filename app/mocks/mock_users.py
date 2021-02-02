@@ -1,4 +1,4 @@
-from ..models.users import UserIn
+from ..models.users import UserIn, UserSignIn
 
 
 def get_mock_user():
@@ -10,4 +10,11 @@ def get_mock_user():
         display_name="test test",
         photo_url="http test",
         phone_number="01028969112"
+    )
+
+
+def get_mock_user_sign_in():
+    return UserSignIn(
+        email="test@aaaa.com",
+        password='banana',
     )

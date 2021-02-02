@@ -6,7 +6,7 @@ from jose import jwt
 from mongomock import MongoClient
 
 from .users import check_confirm_password, get_password_hash, create_access_token, get_user_on_db, create_user_on_db, \
-    get_current_user
+    get_current_user, verify_password, authenticate_user
 from ..env import SECRET_KEY, ALGORITHM, ACCESS_TOKEN_EXPIRE_MINUTES
 from ..mocks.mock_users import get_mock_user
 from ..models.token import TokenData
@@ -96,3 +96,42 @@ async def test_get_current_user():
     access_token_data = TokenData(id=str(created_user.id))
     stored_user = await get_current_user(access_token_data, mock_coll)
     assert stored_user.dict() == created_user.dict()
+
+
+def test_verify_password():
+    # test should return True for matching passwords
+    plain_password = "banana"
+    hashed_password = get_password_hash(plain_password)
+    assert verify_password(plain_password, hashed_password)
+
+
+def test_verify_wrong_password():
+    # test should return False for not matching passwords
+    plain_password = "banana"
+    hashed_password = get_password_hash(plain_password)
+    wrong_password = 'pizza'
+    assert not verify_password(wrong_password, hashed_password)
+
+
+def test_authenticate_user_not_found():
+    # test should return False for not created user
+    plain_password = "banana"
+    wrong_email = "pizza@burgers.com"
+    assert not authenticate_user(coll=mock_coll, email=wrong_email, password=plain_password)
+
+
+def test_authenticate_user_wrong_password():
+    # test should return False for wrong password
+    mock_user = get_mock_user()
+    plain_password = "pizza"
+    assert not authenticate_user(coll=mock_coll, email=mock_user.email, password=plain_password)
+
+
+def test_authenticate_user():
+    # test should return True for correct password
+    mock_user = get_mock_user()
+    stored_user = authenticate_user(coll=mock_coll, email=mock_user.email, password=mock_user.password)
+    delattr(mock_user, 'password')
+    delattr(mock_user, 'password_confirm')
+    delattr(stored_user, 'id')
+    assert mock_user.dict() == stored_user.dict()

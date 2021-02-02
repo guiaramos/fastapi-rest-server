@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Optional, Union
 
 from fastapi import APIRouter, HTTPException, status, Depends, Response
 from jose import jwt
@@ -8,7 +8,7 @@ from passlib.context import CryptContext
 from ..dependencies import get_token_cookie
 from ..env import COOKIE_ACCESS_KEY, SECRET_KEY, ALGORITHM, ACCESS_TOKEN_EXPIRE_MINUTES
 from ..models.token import TokenData
-from ..models.users import UserIn, UserInDB, User
+from ..models.users import UserIn, UserInDB, User, OID, UserSignIn
 from ..repositories.mongo import users as user_repo
 
 # create users router
@@ -49,6 +49,12 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     return encode_jwt
 
 
+# delete_access_cookie deletes the access cookie
+def delete_access_cookie(response: Response):
+    response.delete_cookie(key=COOKIE_ACCESS_KEY)
+    return
+
+
 # create_access_cookie send cookie with the response
 def create_access_cookie(response: Response, value: str, max_age: int):
     response.set_cookie(
@@ -87,11 +93,40 @@ def get_user_on_db(_id: str, coll: user_repo.get_user_collection) -> User:
     return User(**store_user.dict())
 
 
+# verify_password checks if plain_password matches with the hashed_password
+def verify_password(plain_password: str, hashed_password: str):
+    return pwd_context.verify(plain_password, hashed_password)
+
+
+# authenticate_user returns the authenticated user
+def authenticate_user(coll: user_repo.get_user_collection, email: str, password: str) -> Union[User, bool]:
+    user = user_repo.find_one_by_email(coll, email)
+
+    if not user:
+        return False
+
+    if not verify_password(password, user.hashed_password):
+        return False
+
+    return User(**user.dict())
+
+
 # get_current_user returns the current user
 async def get_current_user(token_data: TokenData, coll: user_repo.get_user_collection) -> User:
     _id = token_data.id
     current_user = get_user_on_db(_id, coll=coll)
     return current_user
+
+
+# add_access_cookie adds the cookie to the header
+def add_access_cookie(response: Response, _id: Optional[OID]):
+    # creates access_token
+    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token_data = TokenData(id=str(_id))
+    access_token = create_access_token(access_token_data.dict(), access_token_expires)
+
+    # add cookie to header
+    create_access_cookie(response, access_token, access_token_expires.seconds)
 
 
 @router.post("/", response_model=User)
@@ -106,17 +141,32 @@ async def create_user(user_in: UserIn, response: Response, coll=Depends(user_rep
     # creates the user on db
     created_user = create_user_on_db(user_in, hashed_password, coll)
 
-    # creates access_token
-    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    access_token_data = TokenData(id=str(created_user.id))
-    access_token = create_access_token(access_token_data.dict(), access_token_expires)
-
-    # add cookie to header
-    create_access_cookie(response, access_token, access_token_expires.seconds)
+    # creates and add access cookie
+    add_access_cookie(response, created_user.id)
 
     return created_user
 
 
 @router.get("/me/", response_model=User)
 async def get_me(coll=Depends(user_repo.get_user_collection), token_data: TokenData = Depends(get_token_cookie)):
+    # return the current user
     return await get_current_user(token_data, coll)
+
+
+@router.post("/sign-in/", response_model=User)
+async def sign_in(user_sign_in: UserSignIn, response: Response, coll=Depends(user_repo.get_user_collection)):
+    # get the information is correct
+    user = authenticate_user(coll, email=user_sign_in.email, password=user_sign_in.password)
+
+    # if the user is not authenticated send the unauthorized and delete the cookie
+    if not user:
+        delete_access_cookie(response)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect username or password",
+        )
+
+    # creates and add access cookie
+    add_access_cookie(response, user.id)
+
+    return user

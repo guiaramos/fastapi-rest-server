@@ -50,3 +50,11 @@ def find_one(collection: db.user, user_id: str):
     if stored_user is None:
         return None
     return UserInDB.from_mongo(stored_user)
+
+
+# find_one_by_email finds one user by its email
+def find_one_by_email(collection: db.user, email: str):
+    stored_user = collection.find_one({"email": email})
+    if stored_user is None:
+        return None
+    return UserInDB.from_mongo(stored_user)
